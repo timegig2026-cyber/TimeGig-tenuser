@@ -1,6 +1,22 @@
 import {useState, ChangeEvent, useEffect} from 'react';
-import {Power, Shield, Camera, Upload, LoaderCircle, ArrowLeft, Check, X, User, Circle, Menu, Users, Briefcase, Home, Building, MoreVertical, Building2, CreditCard, Sparkles, Share2, LogOut, UserCircle} from 'lucide-react';
+import {Power, Shield, Camera, Upload, LoaderCircle, ArrowLeft, Check, X, User, Circle, Menu, Users, Briefcase, Home, Building, MoreVertical, Building2, CreditCard, Sparkles, Share2, LogOut, UserCircle, Search, Layers, MapPin} from 'lucide-react';
 import {motion} from 'motion/react';
+import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl, Circle as LeafletCircle } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
+
+// Fix for default marker icons in Leaflet with React
+const markerIcon = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png';
+const markerShadow = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png';
+
+let DefaultIcon = L.icon({
+    iconUrl: markerIcon,
+    shadowUrl: markerShadow,
+    iconSize: [25, 41],
+    iconAnchor: [12, 41]
+});
+
+L.Marker.prototype.options.icon = DefaultIcon;
 
 /**
  * @license
@@ -57,6 +73,13 @@ export default function App() {
   const [referredBy, setReferredBy] = useState<string | null>(null);
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
+  const [showMapSearch, setShowMapSearch] = useState(false);
+  const [mapType, setMapType] = useState<'streets' | 'satellite'>('streets');
+  const [userCoords, setUserCoords] = useState<[number, number] | null>(null);
+  const [mapTargetCenter, setMapTargetCenter] = useState<[number, number] | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [geoError, setGeoError] = useState<string | null>(null);
   const [visitCount, setVisitCount] = useState(() => {
     const saved = localStorage.getItem('visitCount');
     return saved ? parseInt(saved, 10) : Math.floor(Math.random() * 50) + 10;
@@ -81,6 +104,72 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('submissions', JSON.stringify(submissions));
   }, [submissions]);
+
+  useEffect(() => {
+    if (activeTab === 'gigs') {
+      const handleGeoError = (err: GeolocationPositionError) => {
+        let msg = '';
+        switch(err.code) {
+          case err.PERMISSION_DENIED: 
+            msg = 'Location permission denied. Please enable GPS in browser settings to see your exact current position.'; 
+            alert(msg);
+            break;
+          case err.POSITION_UNAVAILABLE: msg = 'Location unavailable. Check your device GPS signal.'; break;
+          case err.TIMEOUT: msg = 'Location request timed out.'; break;
+          default: msg = 'An unknown geolocation error occurred.'; break;
+        }
+        setGeoError(msg);
+        console.error('Geolocation error:', msg);
+      };
+
+      if (navigator.geolocation) {
+        const watchId = navigator.geolocation.watchPosition(
+          (pos) => {
+            setUserCoords([pos.coords.latitude, pos.coords.longitude]);
+            setGeoError(null);
+          },
+          handleGeoError,
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
+        return () => navigator.geolocation.clearWatch(watchId);
+      } else {
+        const noSupportMsg = "Geolocation is not supported by your browser.";
+        setGeoError(noSupportMsg);
+        alert(noSupportMsg);
+      }
+    }
+  }, [activeTab]);
+
+  const handleSearch = async (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && searchQuery.trim()) {
+      setIsSearching(true);
+      try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=1`);
+        const data = await response.json();
+        if (data && data.length > 0) {
+          const { lat, lon } = data[0];
+          setMapTargetCenter([parseFloat(lat), parseFloat(lon)]);
+        } else {
+          alert('Location not found. Please try a different search term.');
+        }
+      } catch (err) {
+        console.error('Search error:', err);
+        alert('An error occurred while searching. Please try again.');
+      } finally {
+        setIsSearching(false);
+      }
+    }
+  };
+
+  function ChangeView({ center }: { center: [number, number] }) {
+    const map = useMap();
+    useEffect(() => {
+        if (center) {
+            map.setView(center, map.getZoom());
+        }
+    }, [center, map]);
+    return null;
+  }
 
   const adminCounts = {
     Overview: submissions.length,
@@ -663,55 +752,73 @@ export default function App() {
 
         <div className="grid gap-4">
           {adminMenu === 'Overview' ? (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col gap-1">
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">Tenant Profit</p>
-                <p className="text-xl font-black text-blue-900">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100 flex flex-col gap-2 relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                  <Building2 className="w-12 h-12 text-blue-900" />
+                </div>
+                <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Tenant Profit Balance</p>
+                <p className="text-2xl font-black text-blue-900 leading-none">
                   R{(submissions.filter(s => s.type === 'tenant' && s.active).length * 299.99).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}
                 </p>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
-                  <span className="text-[9px] font-semibold text-gray-400 tracking-tight">Live</span>
+                <div className="flex items-center gap-1.5 mt-1">
+                  <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]"></div>
+                  <span className="text-[10px] font-bold text-green-600 uppercase tracking-tighter">Real-time Balance</span>
                 </div>
               </div>
 
-              <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col gap-1">
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">User Profit</p>
-                <p className="text-xl font-black text-indigo-900">
+              <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100 flex flex-col gap-2 relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                  <Users className="w-12 h-12 text-indigo-900" />
+                </div>
+                <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest">User Profit Balance</p>
+                <p className="text-2xl font-black text-indigo-900 leading-none">
                   R{(submissions.filter(s => s.type === 'subscription' && s.active).length * 29.99).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}
                 </p>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
-                  <span className="text-[9px] font-semibold text-gray-400 tracking-tight">Live</span>
+                <div className="flex items-center gap-1.5 mt-1">
+                  <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]"></div>
+                  <span className="text-[10px] font-bold text-green-600 uppercase tracking-tighter">Real-time Balance</span>
                 </div>
               </div>
 
-              <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
-                <div>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">Tenants</p>
-                  <p className="text-2xl font-black text-gray-900">
-                    {submissions.filter(s => s.type === 'tenant' && s.active).length}
-                  </p>
+              <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100 flex flex-col gap-2 relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                  <Shield className="w-12 h-12 text-emerald-900" />
                 </div>
-                <Building2 className="w-6 h-6 text-blue-100" />
+                <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Online Tenants</p>
+                <p className="text-3xl font-black text-emerald-900 leading-none">
+                  {submissions.filter(s => s.type === 'tenant' && s.active).length}
+                </p>
+                <div className="flex items-center gap-1.5 mt-1 text-emerald-500">
+                  <UserCircle className="w-3 h-3" />
+                  <span className="text-[10px] font-bold uppercase tracking-tighter">Active Accounts</span>
+                </div>
               </div>
 
-              <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
-                <div>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">Users</p>
-                  <p className="text-2xl font-black text-gray-900">
-                    {submissions.filter(s => s.type === 'subscription' && s.active).length}
-                  </p>
+              <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100 flex flex-col gap-2 relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                  <User className="w-12 h-12 text-violet-900" />
                 </div>
-                <Users className="w-6 h-6 text-indigo-100" />
+                <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Online Users</p>
+                <p className="text-3xl font-black text-violet-900 leading-none">
+                  {submissions.filter(s => s.type === 'subscription' && s.active).length}
+                </p>
+                <div className="flex items-center gap-1.5 mt-1 text-violet-500">
+                  <UserCircle className="w-3 h-3" />
+                  <span className="text-[10px] font-bold uppercase tracking-tighter">Active Accounts</span>
+                </div>
               </div>
 
-              <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between col-span-2">
-                <div>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">Visits</p>
-                  <p className="text-2xl font-black text-gray-900">{visitCount}</p>
+              <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100 flex flex-col gap-2 relative overflow-hidden group col-span-2">
+                <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                  <Sparkles className="w-16 h-16 text-yellow-900" />
                 </div>
-                <Sparkles className="w-6 h-6 text-yellow-100" />
+                <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest text-center">Total Online Visits</p>
+                <p className="text-5xl font-black text-gray-900 text-center leading-tight py-2">{visitCount.toLocaleString()}</p>
+                <div className="flex items-center justify-center gap-2 text-yellow-600 font-bold">
+                  <div className="w-2 h-2 bg-yellow-400 rounded-full animate-ping"></div>
+                  <span className="text-[11px] uppercase tracking-widest">Live Platform Traffic</span>
+                </div>
               </div>
             </div>
           ) : adminMenu === 'Tenants' ? (
@@ -899,26 +1006,28 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen bg-white">
-      <header className="fixed top-0 left-0 right-0 h-16 bg-white/90 backdrop-blur-sm border-b border-gray-200 flex items-center justify-between px-4 gap-4 z-50">
-        <div className="flex items-center gap-2">
-          {mySubmission?.active && (
-            <img src={mySubmission.profile} className="w-8 h-8 rounded-full object-cover" alt="Profile" />
-          )}
-          {mySubmission && (
-            <Circle className={`w-4 h-4 ${mySubmission.active ? 'fill-green-500 text-green-500' : 'fill-red-500 text-red-500'}`} />
-          )}
-        </div>
-        <div className="flex gap-4">
-          <button aria-label="Activation" onClick={handleActivationClick} className="p-2 hover:bg-gray-100 rounded-full">
-            <Power className={`w-6 h-6 ${mySubmission?.active ? 'text-green-500' : 'text-red-500'}`} />
-          </button>
-          <button aria-label="Admin" onClick={handleAdminClick} className="p-2 hover:bg-gray-100 rounded-full">
-            <Shield className="w-6 h-6 text-gray-700" />
-          </button>
-        </div>
-      </header>
+      {!showAdminView && activeTab !== 'gigs' && (
+        <header className="fixed top-0 left-0 right-0 h-16 bg-white/90 backdrop-blur-sm border-b border-gray-200 flex items-center justify-between px-4 gap-4 z-50">
+          <div className="flex items-center gap-2">
+            {mySubmission?.active && (
+              <img src={mySubmission?.profile} className="w-8 h-8 rounded-full object-cover" alt="Profile" />
+            )}
+            {mySubmission && (
+              <Circle className={`w-4 h-4 ${mySubmission?.active ? 'fill-green-500 text-green-500' : 'fill-red-500 text-red-500'}`} />
+            )}
+          </div>
+          <div className="flex gap-4">
+            <button aria-label="Activation" onClick={handleActivationClick} className="p-2 hover:bg-gray-100 rounded-full">
+              <Power className={`w-6 h-6 ${mySubmission?.active ? 'text-green-500' : 'text-red-500'}`} />
+            </button>
+            <button aria-label="Admin" onClick={handleAdminClick} className="p-2 hover:bg-gray-100 rounded-full">
+              <Shield className="w-6 h-6 text-gray-700" />
+            </button>
+          </div>
+        </header>
+      )}
       
-      <main className="flex-grow p-4 pt-20 pb-20 bg-white">
+      <main className={`flex-grow bg-white ${activeTab === 'gigs' ? 'pt-0 pb-14' : 'p-4 pt-20 pb-16'}`}>
         {activeTab === 'seekers' && (
           <div className="flex flex-col items-center justify-center h-full text-gray-800">
             <Users className="w-16 h-16 mb-4 text-gray-400" />
@@ -926,9 +1035,138 @@ export default function App() {
           </div>
         )}
         {activeTab === 'gigs' && (
-          <div className="flex flex-col items-center justify-center h-full text-gray-800">
-            <Briefcase className="w-16 h-16 mb-4 text-gray-400" />
-            <h2 className="text-2xl font-bold">GiGs</h2>
+          <div className="w-full h-full relative z-0">
+             {geoError && (
+               <div className="absolute top-20 left-4 right-4 z-[1001] bg-red-50 border border-red-200 p-3 rounded-2xl shadow-lg flex items-center gap-3">
+                 <div className="bg-red-100 p-2 rounded-full">
+                   <X className="w-4 h-4 text-red-600" />
+                 </div>
+                 <p className="text-xs font-bold text-red-800 flex-grow">{geoError}</p>
+                 <button onClick={() => setGeoError(null)} className="p-1 hover:bg-red-100 rounded-full">
+                   <X className="w-4 h-4 text-red-400" />
+                 </button>
+               </div>
+             )}
+             <MapContainer center={userCoords || [-26.2041, 28.0473]} zoom={13} style={{ height: '100%', width: '100%' }} zoomControl={false}>
+                {mapType === 'streets' ? (
+                    <TileLayer
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    />
+                ) : (
+                    <TileLayer
+                        attribution='Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+                        url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                    />
+                )}
+                
+                <ZoomControl position="bottomright" />
+                
+                {mapTargetCenter && <ChangeView center={mapTargetCenter} />}
+                
+                {userCoords && (
+                    <>
+                        {!mapTargetCenter && <ChangeView center={userCoords} />}
+                        <LeafletCircle 
+                            center={userCoords} 
+                            radius={20} 
+                            pathOptions={{ fillColor: '#3b82f6', fillOpacity: 1, color: 'white', weight: 2 }} 
+                        />
+                        <LeafletCircle 
+                            center={userCoords} 
+                            radius={100} 
+                            pathOptions={{ fillColor: '#3b82f6', fillOpacity: 0.1, color: '#3b82f6', weight: 1 }} 
+                        />
+                        <Marker position={userCoords} icon={L.divIcon({
+                            className: 'custom-div-icon',
+                            html: `<div class="w-4 h-4 bg-blue-600 rounded-full border-2 border-white shadow-lg animate-pulse"></div>`,
+                            iconSize: [16, 16],
+                            iconAnchor: [8, 8]
+                        })}>
+                            <Popup>
+                                Exact Location Found.
+                            </Popup>
+                        </Marker>
+                    </>
+                )}
+
+                <Marker position={[-26.2041, 28.0473]}>
+                    <Popup>
+                        Job opportunities in Johannesburg.
+                    </Popup>
+                </Marker>
+            </MapContainer>
+
+            {/* Floating Map Controls */}
+            <div className="absolute top-6 right-4 z-[1000] flex flex-col gap-3 items-end">
+               <motion.div 
+                 initial={false}
+                 animate={{ width: showMapSearch ? '240px' : '44px' }}
+                 className="bg-white rounded-2xl shadow-2xl border border-gray-100 flex items-center overflow-hidden h-11"
+               >
+                  <button 
+                    onClick={() => setShowMapSearch(!showMapSearch)}
+                    className="w-11 h-11 flex items-center justify-center shrink-0 hover:bg-gray-50 transition-colors"
+                  >
+                    <Search className={`w-5 h-5 ${showMapSearch ? 'text-blue-600' : 'text-gray-500'}`} />
+                  </button>
+                  {showMapSearch && (
+                    <div className="relative flex-grow h-full flex items-center">
+                      <input 
+                        autoFocus
+                        type="text" 
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onKeyDown={handleSearch}
+                        placeholder="Search address, street, city..." 
+                        className="w-full h-full px-2 outline-none text-sm font-medium bg-transparent"
+                        disabled={isSearching}
+                      />
+                      {isSearching && (
+                        <div className="absolute right-2">
+                          <LoaderCircle className="w-4 h-4 text-blue-500 animate-spin" />
+                        </div>
+                      )}
+                    </div>
+                  )}
+               </motion.div>
+
+               <button 
+                 onClick={() => setMapType(mapType === 'streets' ? 'satellite' : 'streets')}
+                 className="w-11 h-11 bg-white rounded-2xl shadow-2xl border border-gray-100 flex items-center justify-center hover:bg-gray-50 transition-colors"
+               >
+                  <Layers className={`w-5 h-5 ${mapType === 'satellite' ? 'text-blue-600' : 'text-gray-500'}`} />
+               </button>
+
+               <button 
+                 onClick={() => {
+                   setMapTargetCenter(null);
+                   if (!navigator.geolocation) {
+                     alert("Geolocation is not supported by your browser.");
+                     return;
+                   }
+                   navigator.geolocation.getCurrentPosition(
+                     (pos) => {
+                       setUserCoords([pos.coords.latitude, pos.coords.longitude]);
+                       setGeoError(null);
+                     },
+                     (err) => {
+                       let msg = 'Cannot get location: ';
+                       if (err.code === err.PERMISSION_DENIED) msg += 'Please enable Location permission in your browser/device settings for this site.';
+                       else if (err.code === err.POSITION_UNAVAILABLE) msg += 'Location information is unavailable.';
+                       else if (err.code === err.TIMEOUT) msg += 'Location request timed out.';
+                       else msg += 'An unknown error occurred.';
+                       alert(msg);
+                       setGeoError(msg);
+                     },
+                     { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                   );
+                 }}
+                 className="w-11 h-11 bg-white rounded-2xl shadow-2xl border border-gray-100 flex items-center justify-center hover:bg-gray-50 transition-colors"
+               >
+                  <MapPin className={`w-5 h-5 ${userCoords ? 'text-blue-600 animate-bounce' : 'text-gray-400'}`} />
+               </button>
+            </div>
           </div>
         )}
         {activeTab === 'home' && mySubmission && mySubmission.status === 'approved' && !mySubmission.active && (
@@ -977,26 +1215,53 @@ export default function App() {
         )}
       </main>
       
-      <nav className="fixed bottom-0 left-0 right-0 h-16 bg-white/95 backdrop-blur-2xl border-t border-gray-100 shadow-[0_-5px_20px_rgba(0,0,0,0.05)] flex items-center justify-around z-40 px-3">
-        <button onClick={() => setActiveTab('seekers')} className={`flex flex-col items-center justify-center p-2 rounded-2xl transition-all duration-200 ${activeTab === 'seekers' ? 'bg-gradient-to-t from-blue-600 to-blue-500 text-white shadow-md shadow-blue-500/30 -translate-y-1' : 'text-gray-500 hover:bg-gray-100/80'}`}>
-          <Users className="w-5 h-5" />
-          <span className="text-[10px] font-semibold mt-0.5">Seekers</span>
-        </button>
-        <button onClick={() => setActiveTab('gigs')} className={`flex flex-col items-center justify-center p-2 rounded-2xl transition-all duration-200 ${activeTab === 'gigs' ? 'bg-gradient-to-t from-blue-600 to-blue-500 text-white shadow-md shadow-blue-500/30 -translate-y-1' : 'text-gray-500 hover:bg-gray-100/80'}`}>
-          <Briefcase className="w-5 h-5" />
-          <span className="text-[10px] font-semibold mt-0.5">GiGs</span>
-        </button>
+      <nav className="fixed bottom-0 left-0 right-0 h-14 bg-white/95 backdrop-blur-3xl border-t border-gray-100/50 shadow-[0_-10px_40px_rgba(0,0,0,0.08)] flex items-center justify-around z-40 px-4 pb-0.5">
+        <motion.button 
+          whileHover={{ scale: 1.1, y: -3 }}
+          whileTap={{ scale: 0.9 }}
+          onClick={() => setActiveTab('seekers')} 
+          className={`relative flex flex-col items-center justify-center w-11 h-11 rounded-xl transition-all duration-500 ${activeTab === 'seekers' ? 'bg-gradient-to-tr from-blue-600 via-blue-500 to-indigo-400 text-white shadow-[0_8px_15px_-5px_rgba(37,99,235,0.4),inset_0_1px_2px_rgba(255,255,255,0.3)] ring-1 ring-white/20' : 'text-gray-400 hover:text-gray-600'}`}
+        >
+          {activeTab === 'seekers' && <motion.div layoutId="nav-bg" className="absolute inset-0 bg-blue-600 rounded-xl -z-10 blur-sm opacity-50" />}
+          <Users className={`w-5 h-5 ${activeTab === 'seekers' ? 'drop-shadow-[0_1px_1px_rgba(0,0,0,0.2)]' : ''}`} />
+          <span className={`text-[8px] font-bold mt-0.5 uppercase tracking-tighter ${activeTab === 'seekers' ? 'opacity-100' : 'opacity-60'}`}>Seekers</span>
+        </motion.button>
+
+        <motion.button 
+          whileHover={{ scale: 1.1, y: -3 }}
+          whileTap={{ scale: 0.9 }}
+          onClick={() => setActiveTab('gigs')} 
+          className={`relative flex flex-col items-center justify-center w-11 h-11 rounded-xl transition-all duration-500 ${activeTab === 'gigs' ? 'bg-gradient-to-tr from-blue-600 via-blue-500 to-indigo-400 text-white shadow-[0_8px_15px_-5px_rgba(37,99,235,0.4),inset_0_1px_2px_rgba(255,255,255,0.3)] ring-1 ring-white/20' : 'text-gray-400 hover:text-gray-600'}`}
+        >
+          {activeTab === 'gigs' && <motion.div layoutId="nav-bg" className="absolute inset-0 bg-blue-600 rounded-xl -z-10 blur-sm opacity-50" />}
+          <Briefcase className={`w-5 h-5 ${activeTab === 'gigs' ? 'drop-shadow-[0_1px_1px_rgba(0,0,0,0.2)]' : ''}`} />
+          <span className={`text-[8px] font-bold mt-0.5 uppercase tracking-tighter ${activeTab === 'gigs' ? 'opacity-100' : 'opacity-60'}`}>GiGs</span>
+        </motion.button>
+
         {submissions[submissions.length - 1]?.type === 'tenant' && submissions[submissions.length - 1]?.active && (
-          <button onClick={() => setActiveTab('tenant-portal')} className={`flex flex-col items-center justify-center p-2 rounded-2xl transition-all duration-200 ${activeTab === 'tenant-portal' ? 'bg-gradient-to-t from-blue-600 to-blue-500 text-white shadow-md shadow-blue-500/30 -translate-y-1' : 'text-gray-500 hover:bg-gray-100/80'}`}>
-            <Building className="w-5 h-5" />
-            <span className="text-[10px] font-semibold mt-0.5">Tenant</span>
-          </button>
+          <motion.button 
+            whileHover={{ scale: 1.1, y: -3 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={() => setActiveTab('tenant-portal')} 
+            className={`relative flex flex-col items-center justify-center w-11 h-11 rounded-xl transition-all duration-500 ${(activeTab as string) === 'tenant-portal' ? 'bg-gradient-to-tr from-blue-600 via-blue-500 to-indigo-400 text-white shadow-[0_8px_15px_-5px_rgba(37,99,235,0.4),inset_0_1px_2px_rgba(255,255,255,0.3)] ring-1 ring-white/20' : 'text-gray-400 hover:text-gray-600'}`}
+          >
+            {(activeTab as string) === 'tenant-portal' && <motion.div layoutId="nav-bg" className="absolute inset-0 bg-blue-600 rounded-xl -z-10 blur-sm opacity-50" />}
+            <Building className={`w-5 h-5 ${(activeTab as string) === 'tenant-portal' ? 'drop-shadow-[0_1px_1px_rgba(0,0,0,0.2)]' : ''}`} />
+            <span className={`text-[8px] font-bold mt-0.5 uppercase tracking-tighter ${(activeTab as string) === 'tenant-portal' ? 'opacity-100' : 'opacity-60'}`}>Tenant</span>
+          </motion.button>
         )}
+
         {submissions[submissions.length - 1]?.type === 'subscription' && submissions[submissions.length - 1]?.active && (
-          <button onClick={() => setActiveTab('user-portal')} className={`flex flex-col items-center justify-center p-2 rounded-2xl transition-all duration-200 ${activeTab === 'user-portal' ? 'bg-gradient-to-t from-blue-600 to-blue-500 text-white shadow-md shadow-blue-500/30 -translate-y-1' : 'text-gray-500 hover:bg-gray-100/80'}`}>
-            <UserCircle className="w-5 h-5" />
-            <span className="text-[10px] font-semibold mt-0.5">User</span>
-          </button>
+          <motion.button 
+            whileHover={{ scale: 1.1, y: -3 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={() => setActiveTab('user-portal')} 
+            className={`relative flex flex-col items-center justify-center w-11 h-11 rounded-xl transition-all duration-500 ${(activeTab as string) === 'user-portal' ? 'bg-gradient-to-tr from-blue-600 via-blue-500 to-indigo-400 text-white shadow-[0_8px_15px_-5px_rgba(37,99,235,0.4),inset_0_1px_2px_rgba(255,255,255,0.3)] ring-1 ring-white/20' : 'text-gray-400 hover:text-gray-600'}`}
+          >
+            {(activeTab as string) === 'user-portal' && <motion.div layoutId="nav-bg" className="absolute inset-0 bg-blue-600 rounded-xl -z-10 blur-sm opacity-50" />}
+            <UserCircle className={`w-5 h-5 ${(activeTab as string) === 'user-portal' ? 'drop-shadow-[0_1px_1px_rgba(0,0,0,0.2)]' : ''}`} />
+            <span className={`text-[8px] font-bold mt-0.5 uppercase tracking-tighter ${(activeTab as string) === 'user-portal' ? 'opacity-100' : 'opacity-60'}`}>User</span>
+          </motion.button>
         )}
       </nav>
 
