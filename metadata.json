@@ -1,0 +1,6 @@
+{
+  "name": "White Template App",
+  "description": "A simple white template with a bottom menu bar.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
