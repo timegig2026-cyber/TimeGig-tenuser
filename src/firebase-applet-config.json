@@ -1,0 +1,9 @@
+{
+  "apiKey": "dummy-api-key",
+  "authDomain": "gen-lang-client-0530555722.firebaseapp.com",
+  "projectId": "gen-lang-client-0530555722",
+  "storageBucket": "gen-lang-client-0530555722.appspot.com",
+  "messagingSenderId": "0530555722",
+  "appId": "1:0530555722:web:dummy-app-id",
+  "firestoreDatabaseId": "(default)"
+}

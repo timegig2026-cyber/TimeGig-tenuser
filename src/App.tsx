@@ -4,6 +4,14 @@ import {motion} from 'motion/react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl, Circle as LeafletCircle, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
+import firebaseConfig from './firebase-applet-config.json';
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+const auth = getAuth(app);
 
 // Fix for default marker icons in Leaflet with React
 const markerIcon = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png';
@@ -214,27 +222,28 @@ export default function App() {
     localStorage.setItem('currentUser', currentUser || '');
   }, [currentUser]);
 
-  const handleAuth = () => {
-    const users: any[] = JSON.parse(localStorage.getItem('registeredUsers') || '[]');
-    if (authMode === 'register') {
-      if (!authData.terms) return alert('Accept T&C');
-      if (users.find(u => u.email === authData.email)) return alert('User exists');
-      users.push({ email: authData.email, password: authData.password });
-      localStorage.setItem('registeredUsers', JSON.stringify(users));
-      alert('Registered! Please login.');
-      setAuthMode('login');
-    } else {
-      if (users.find(u => u.email === authData.email && u.password === authData.password)) {
+  const handleAuth = async () => {
+    try {
+      if (authMode === 'register') {
+        if (!authData.terms) return alert('Accept T&C');
+        await createUserWithEmailAndPassword(auth, authData.email, authData.password);
+        alert('Registered! Please login.');
+        setAuthMode('login');
+      } else {
+        await signInWithEmailAndPassword(auth, authData.email, authData.password);
         setCurrentUser(authData.email);
         setShowAuthModal(false);
-      } else {
-        alert('Invalid details');
       }
+    } catch (err: any) {
+      alert(err.message);
     }
   };
 
   const handleActivationClick = () => {
-    if (!currentUser) return setShowAuthModal(true);
+    if (!currentUser) {
+      setAuthMode('register');
+      return setShowAuthModal(true);
+    }
     if (mySubmission?.active) {
       setShowActiveStatusModal(true);
     } else {
@@ -1135,6 +1144,26 @@ export default function App() {
         )}
         {activeTab === 'gigs' && (
           <div className="w-full h-full relative z-0">
+            <div className="absolute top-4 left-4 right-4 z-[1001]">
+              <input 
+                type="text" 
+                placeholder="Search location (address, street, city)..."
+                className="w-full h-12 bg-white/90 backdrop-blur-md rounded-2xl px-5 shadow-lg border border-gray-200 outline-none text-sm font-medium text-gray-800"
+                onKeyDown={async (e) => {
+                  if (e.key === 'Enter') {
+                    const query = e.currentTarget.value;
+                    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`, {
+                      headers: { 'User-Agent': 'TimeGigApp/1.0' }
+                    });
+                    const data = await response.json();
+                    if (data && data.length > 0) {
+                      const { lat, lon } = data[0];
+                      setMapTargetCenter([parseFloat(lat), parseFloat(lon)]);
+                    }
+                  }
+                }}
+              />
+            </div>
              {geoError && (
                <div className="absolute top-20 left-4 right-4 z-[1001] bg-red-50 border border-red-200 p-3 rounded-2xl shadow-lg flex items-center gap-3">
                  <div className="bg-red-100 p-2 rounded-full">
@@ -1146,7 +1175,7 @@ export default function App() {
                  </button>
                </div>
              )}
-             <MapContainer center={userCoords || [-26.2041, 28.0473]} zoom={13} style={{ height: '100%', width: '100%' }} zoomControl={false}>
+             <MapContainer center={mapTargetCenter || userCoords || [-26.2041, 28.0473]} zoom={13} style={{ height: '100%', width: '100%' }} zoomControl={false}>
                 {mapType === 'streets' ? (
                     <TileLayer
                         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -1162,10 +1191,10 @@ export default function App() {
                 <ZoomControl position="bottomright" />
                 
                 {mapTargetCenter && <ChangeView center={mapTargetCenter} />}
+                {!mapTargetCenter && userCoords && <ChangeView center={userCoords} />}
                 
                 {userCoords && (
                     <>
-                        {!mapTargetCenter && <ChangeView center={userCoords} />}
                         <LeafletCircle 
                             center={userCoords} 
                             radius={20} 
@@ -1350,7 +1379,6 @@ export default function App() {
           whileHover={{ scale: 1.1, y: -3 }}
           whileTap={{ scale: 0.9 }}
           onClick={() => {
-            if (!currentUser) return setShowAuthModal(true);
             setActiveTab('seekers');
           }} 
           className={`relative flex flex-col items-center justify-center w-11 h-11 rounded-xl transition-all duration-500 ${(activeTab as string) === 'seekers' ? 'bg-gradient-to-tr from-blue-600 via-blue-500 to-indigo-400 text-white shadow-[0_8px_15px_-5px_rgba(37,99,235,0.4),inset_0_1px_2px_rgba(255,255,255,0.3)] ring-1 ring-white/20' : 'text-gray-400 hover:text-gray-600'}`}
@@ -1364,7 +1392,6 @@ export default function App() {
           whileHover={{ scale: 1.1, y: -3 }}
           whileTap={{ scale: 0.9 }}
           onClick={() => {
-            if (!currentUser) return setShowAuthModal(true);
             setActiveTab('gigs');
           }} 
           className={`relative flex flex-col items-center justify-center w-11 h-11 rounded-xl transition-all duration-500 ${(activeTab as string) === 'gigs' ? 'bg-gradient-to-tr from-blue-600 via-blue-500 to-indigo-400 text-white shadow-[0_8px_15px_-5px_rgba(37,99,235,0.4),inset_0_1px_2px_rgba(255,255,255,0.3)] ring-1 ring-white/20' : 'text-gray-400 hover:text-gray-600'}`}
@@ -1379,7 +1406,6 @@ export default function App() {
             whileHover={{ scale: 1.1, y: -3 }}
             whileTap={{ scale: 0.9 }}
             onClick={() => {
-              if (!currentUser) return setShowAuthModal(true);
               setActiveTab('tenant-portal');
             }} 
             className={`relative flex flex-col items-center justify-center w-11 h-11 rounded-xl transition-all duration-500 ${(activeTab as string) === 'tenant-portal' ? 'bg-gradient-to-tr from-blue-600 via-blue-500 to-indigo-400 text-white shadow-[0_8px_15px_-5px_rgba(37,99,235,0.4),inset_0_1px_2px_rgba(255,255,255,0.3)] ring-1 ring-white/20' : 'text-gray-400 hover:text-gray-600'}`}
@@ -1395,7 +1421,6 @@ export default function App() {
             whileHover={{ scale: 1.1, y: -3 }}
             whileTap={{ scale: 0.9 }}
             onClick={() => {
-              if (!currentUser) return setShowAuthModal(true);
               setActiveTab('user-portal');
             }} 
             className={`relative flex flex-col items-center justify-center w-11 h-11 rounded-xl transition-all duration-500 ${(activeTab as string) === 'user-portal' ? 'bg-gradient-to-tr from-blue-600 via-blue-500 to-indigo-400 text-white shadow-[0_8px_15px_-5px_rgba(37,99,235,0.4),inset_0_1px_2px_rgba(255,255,255,0.3)] ring-1 ring-white/20' : 'text-gray-400 hover:text-gray-600'}`}
@@ -1416,6 +1441,49 @@ export default function App() {
           <span className={`text-[8px] font-bold mt-0.5 uppercase tracking-tighter opacity-60`}>Admin</span>
         </motion.button>
       </nav>
+
+      {showAuthModal && (
+        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4" onClick={() => setShowAuthModal(false)}>
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.15 }} className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-xl font-bold">{authMode === 'login' ? 'Login' : 'Sign Up'}</h2>
+            <input type="email" placeholder="Email" className="w-full p-3 border rounded-xl" value={authData.email} onChange={e => setAuthData({...authData, email: e.target.value})} />
+            <input type="password" placeholder="Password" className="w-full p-3 border rounded-xl" value={authData.password} onChange={e => setAuthData({...authData, password: e.target.value})} />
+            {authMode === 'register' && (
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={authData.terms} onChange={e => setAuthData({...authData, terms: e.target.checked})} />
+                I accept the terms and conditions
+              </label>
+            )}
+            <button 
+              onClick={async () => {
+                try {
+                  if (authMode === 'login') {
+                    await signInWithEmailAndPassword(auth, authData.email, authData.password);
+                  } else {
+                    if (!authData.terms) return alert('Accept terms!');
+                    await createUserWithEmailAndPassword(auth, authData.email, authData.password);
+                  }
+                  setCurrentUser(authData.email);
+                  localStorage.setItem('currentUser', authData.email);
+                  setShowAuthModal(false);
+                  if (authMode === 'register') {
+                    setActivationStep('options');
+                    setShowActivationModal(true);
+                  }
+                } catch (e: any) {
+                  alert(e.message);
+                }
+              }}
+              className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold"
+            >
+              {authMode === 'login' ? 'Login' : 'Sign Up'}
+            </button>
+            <button onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')} className="text-xs text-center w-full text-blue-600">
+              {authMode === 'login' ? 'Need an account? Sign up' : 'Have an account? Login'}
+            </button>
+          </motion.div>
+        </div>
+      )}
 
       {showActiveStatusModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowActiveStatusModal(false)}>
