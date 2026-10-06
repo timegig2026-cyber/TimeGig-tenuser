@@ -1,7 +1,7 @@
 import {useState, ChangeEvent, useEffect} from 'react';
 import {Power, Shield, Camera, Upload, LoaderCircle, ArrowLeft, Check, X, User, Circle, Menu, Users, Briefcase, Home, Building, MoreVertical, Building2, CreditCard, Sparkles, Share2, LogOut, UserCircle, Search, Layers, MapPin} from 'lucide-react';
 import {motion} from 'motion/react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl, Circle as LeafletCircle } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl, Circle as LeafletCircle, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
@@ -35,6 +35,9 @@ interface Submission {
   referredBy: string | null;
   subscriptionFee: number;
   activatedAt: number | null;
+  hourlyRate?: number;
+  lat?: number;
+  lng?: number;
 }
 
 interface AppSettings {
@@ -80,6 +83,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [geoError, setGeoError] = useState<string | null>(null);
+  const [mapZoom, setMapZoom] = useState(13);
   const [visitCount, setVisitCount] = useState(() => {
     const saved = localStorage.getItem('visitCount');
     return saved ? parseInt(saved, 10) : Math.floor(Math.random() * 50) + 10;
@@ -171,6 +175,13 @@ export default function App() {
     return null;
   }
 
+  function ZoomHandler() {
+    const map = useMapEvents({
+      zoomend: () => setMapZoom(map.getZoom()),
+    });
+    return null;
+  }
+
   const adminCounts = {
     Overview: submissions.length,
     Verification: submissions.filter(s => s.status === 'pending').length,
@@ -242,7 +253,10 @@ export default function App() {
         paymentStatus: null,
         referredBy: referredBy,
         subscriptionFee: selectedOption === 'tenant' ? 299.99 : 29.99,
-        activatedAt: null
+        activatedAt: null,
+        hourlyRate: selectedOption === 'subscription' ? 150 : undefined,
+        lat: -26.2041 + (Math.random() - 0.5) * 0.1,
+        lng: 28.0473 + (Math.random() - 0.5) * 0.1
       }]);
       setActivationStep('review');
     }
@@ -1005,33 +1019,107 @@ export default function App() {
   const mySubmission = submissions[submissions.length - 1];
 
   return (
-    <div className="flex flex-col h-screen bg-white">
-      {!showAdminView && activeTab !== 'gigs' && (
-        <header className="fixed top-0 left-0 right-0 h-16 bg-white/90 backdrop-blur-sm border-b border-gray-200 flex items-center justify-between px-4 gap-4 z-50">
-          <div className="flex items-center gap-2">
-            {mySubmission?.active && (
-              <img src={mySubmission?.profile} className="w-8 h-8 rounded-full object-cover" alt="Profile" />
-            )}
-            {mySubmission && (
-              <Circle className={`w-4 h-4 ${mySubmission?.active ? 'fill-green-500 text-green-500' : 'fill-red-500 text-red-500'}`} />
-            )}
-          </div>
-          <div className="flex gap-4">
-            <button aria-label="Activation" onClick={handleActivationClick} className="p-2 hover:bg-gray-100 rounded-full">
-              <Power className={`w-6 h-6 ${mySubmission?.active ? 'text-green-500' : 'text-red-500'}`} />
-            </button>
-            <button aria-label="Admin" onClick={handleAdminClick} className="p-2 hover:bg-gray-100 rounded-full">
-              <Shield className="w-6 h-6 text-gray-700" />
-            </button>
-          </div>
-        </header>
+    <div className="flex flex-col h-screen bg-white relative">
+      {!showAdminView && (
+        <div className="fixed top-6 left-6 flex items-center gap-3 bg-white/80 backdrop-blur-xl p-2 rounded-2xl shadow-xl border border-white/40 z-50 ring-1 ring-black/5">
+          {mySubmission?.active && (
+            <img src={mySubmission?.profile} className="w-10 h-10 rounded-xl object-cover shadow-sm ring-2 ring-white" alt="Profile" />
+          )}
+          {mySubmission && (
+            <div className="flex flex-col pr-2">
+              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Status</span>
+              <div className="flex items-center gap-1.5">
+                <Circle className={`w-3 h-3 ${mySubmission?.active ? 'fill-green-500 text-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'fill-red-500 text-red-500'}`} />
+                <span className={`text-[10px] font-bold uppercase tracking-tighter ${mySubmission?.active ? 'text-green-600' : 'text-red-600'}`}>
+                  {mySubmission?.active ? 'Live' : 'Offline'}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
       )}
       
-      <main className={`flex-grow bg-white ${activeTab === 'gigs' ? 'pt-0 pb-14' : 'p-4 pt-20 pb-16'}`}>
+      <main className={`flex-grow bg-white ${(activeTab === 'gigs' || activeTab === 'seekers') ? 'pt-0 pb-14' : 'p-4 pt-6 pb-16'}`}>
         {activeTab === 'seekers' && (
-          <div className="flex flex-col items-center justify-center h-full text-gray-800">
-            <Users className="w-16 h-16 mb-4 text-gray-400" />
-            <h2 className="text-2xl font-bold">Seekers</h2>
+          <div className="w-full h-full relative z-0">
+            <div className="absolute top-24 left-4 right-4 z-[1000]">
+              <div className="bg-white/90 backdrop-blur-xl shadow-2xl border border-white/60 rounded-3xl flex items-center h-14 px-5 gap-3 ring-1 ring-black/5">
+                <Search className="w-6 h-6 text-blue-500" />
+                <input 
+                  type="text" 
+                  placeholder="Search online seekers..." 
+                  className="bg-transparent w-full h-full outline-none text-sm font-bold text-gray-800 placeholder:text-gray-400"
+                />
+              </div>
+            </div>
+            
+            <div className="w-full h-full blur-[6px] grayscale-[0.3] brightness-[0.85] contrast-[1.1]">
+              <MapContainer center={userCoords || [-26.2041, 28.0473]} zoom={12} style={{ height: '100%', width: '100%' }} zoomControl={false}>
+                <TileLayer
+                  attribution='&copy; OpenStreetMap contributors'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+                <ZoomControl position="bottomright" />
+                {userCoords && <ChangeView center={userCoords} />}
+                
+                {submissions.filter(s => s.type === 'subscription' && s.active).map(seeker => (
+                  <Marker 
+                    key={seeker.id} 
+                    position={[seeker.lat || -26.2041, seeker.lng || 28.0473]}
+                    icon={L.divIcon({
+                      className: 'custom-div-icon',
+                      html: `
+                        <div class="relative group cursor-pointer scale-110">
+                          <div class="absolute -inset-2 bg-green-400 rounded-full blur-md opacity-40 animate-pulse"></div>
+                          <div class="relative w-14 h-14 bg-white rounded-2xl p-1 shadow-2xl border-2 border-green-500 overflow-hidden transform rotate-3 hover:rotate-0 transition-transform">
+                            <img src="${seeker.profile}" class="w-full h-full object-cover rounded-xl" />
+                            <div class="absolute bottom-1 right-1 w-4 h-4 bg-green-500 border-2 border-white rounded-full shadow-lg"></div>
+                          </div>
+                        </div>
+                      `,
+                      iconSize: [56, 56],
+                      iconAnchor: [28, 28]
+                    })}
+                  >
+                    <Popup className="custom-popup border-none">
+                      <div className="p-3 space-y-4 min-w-[240px] bg-white rounded-3xl">
+                        <div className="flex items-center gap-4">
+                          <img src={seeker.profile} className="w-16 h-16 rounded-2xl object-cover shadow-md ring-2 ring-gray-50" />
+                          <div>
+                            <p className="font-black text-gray-900 text-lg leading-none mb-1.5 uppercase tracking-tighter">Seeker {seeker.id.slice(-4)}</p>
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                              <span className="text-[10px] font-black text-green-600 uppercase tracking-widest">Active Online</span>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="bg-blue-50 p-3 rounded-2xl border border-blue-100/50">
+                            <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-1">Rate / Hr</p>
+                            <p className="text-xl font-black text-blue-900">R{seeker.hourlyRate?.toFixed(2)}</p>
+                          </div>
+                          <div className="bg-indigo-50 p-3 rounded-2xl border border-indigo-100/50">
+                            <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-1">Verification</p>
+                            <p className="text-xs font-black text-indigo-900 uppercase">Trusted</p>
+                          </div>
+                        </div>
+
+                        <button className="w-full bg-gray-900 text-white py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-xl hover:bg-black transition-all hover:scale-[1.02] active:scale-95">
+                          View Details
+                        </button>
+                      </div>
+                    </Popup>
+                  </Marker>
+                ))}
+              </MapContainer>
+            </div>
+            
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+              <div className="bg-white/40 backdrop-blur-lg px-8 py-4 rounded-full border border-white/30 shadow-2xl">
+                 <p className="text-[11px] font-black text-gray-900 uppercase tracking-[0.2em] opacity-80">Discover Nearby Talent</p>
+              </div>
+            </div>
           </div>
         )}
         {activeTab === 'gigs' && (
@@ -1077,11 +1165,29 @@ export default function App() {
                             radius={100} 
                             pathOptions={{ fillColor: '#3b82f6', fillOpacity: 0.1, color: '#3b82f6', weight: 1 }} 
                         />
+                        <ZoomHandler />
                         <Marker position={userCoords} icon={L.divIcon({
                             className: 'custom-div-icon',
-                            html: `<div class="w-4 h-4 bg-blue-600 rounded-full border-2 border-white shadow-lg animate-pulse"></div>`,
-                            iconSize: [16, 16],
-                            iconAnchor: [8, 8]
+                            html: `
+                              <div class="relative group">
+                                <div class="absolute -inset-1 bg-blue-500 rounded-full blur opacity-40 animate-pulse"></div>
+                                <div 
+                                  style="
+                                    width: ${Math.max(12, mapZoom * 2.5)}px; 
+                                    height: ${Math.max(12, mapZoom * 2.5)}px;
+                                    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                                  " 
+                                  class="relative bg-white rounded-full p-0.5 shadow-2xl border-2 border-white overflow-hidden ring-2 ring-blue-500/20"
+                                >
+                                  ${mySubmission?.profile 
+                                    ? `<img src="${mySubmission.profile}" class="w-full h-full object-cover rounded-full" />`
+                                    : `<div class="w-full h-full bg-blue-600 flex items-center justify-center text-white font-bold text-[10px]">U</div>`
+                                  }
+                                </div>
+                              </div>
+                            `,
+                            iconSize: [0, 0],
+                            iconAnchor: [Math.max(6, mapZoom * 1.25), Math.max(6, mapZoom * 1.25)]
                         })}>
                             <Popup>
                                 Exact Location Found.
@@ -1215,7 +1321,17 @@ export default function App() {
         )}
       </main>
       
-      <nav className="fixed bottom-0 left-0 right-0 h-14 bg-white/95 backdrop-blur-3xl border-t border-gray-100/50 shadow-[0_-10px_40px_rgba(0,0,0,0.08)] flex items-center justify-around z-40 px-4 pb-0.5">
+      <nav className="fixed bottom-0 left-0 right-0 h-16 bg-white/95 backdrop-blur-3xl border-t border-gray-100/50 shadow-[0_-10px_40px_rgba(0,0,0,0.08)] flex items-center justify-around z-40 px-2 pb-1">
+        <motion.button 
+          whileHover={{ scale: 1.1, y: -3 }}
+          whileTap={{ scale: 0.9 }}
+          onClick={handleActivationClick} 
+          className={`relative flex flex-col items-center justify-center w-11 h-11 rounded-xl transition-all duration-500 hover:bg-gray-50 text-gray-400`}
+        >
+          <Power className={`w-5 h-5 ${mySubmission?.active ? 'text-green-500' : 'text-red-500'}`} />
+          <span className={`text-[8px] font-bold mt-0.5 uppercase tracking-tighter opacity-60`}>Active</span>
+        </motion.button>
+
         <motion.button 
           whileHover={{ scale: 1.1, y: -3 }}
           whileTap={{ scale: 0.9 }}
@@ -1263,6 +1379,16 @@ export default function App() {
             <span className={`text-[8px] font-bold mt-0.5 uppercase tracking-tighter ${(activeTab as string) === 'user-portal' ? 'opacity-100' : 'opacity-60'}`}>User</span>
           </motion.button>
         )}
+
+        <motion.button 
+          whileHover={{ scale: 1.1, y: -3 }}
+          whileTap={{ scale: 0.9 }}
+          onClick={handleAdminClick} 
+          className={`relative flex flex-col items-center justify-center w-11 h-11 rounded-xl transition-all duration-500 hover:bg-gray-50 text-gray-400`}
+        >
+          <Shield className="w-5 h-5 text-gray-600" />
+          <span className={`text-[8px] font-bold mt-0.5 uppercase tracking-tighter opacity-60`}>Admin</span>
+        </motion.button>
       </nav>
 
       {showActiveStatusModal && (
