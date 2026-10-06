@@ -84,6 +84,10 @@ export default function App() {
   const [isSearching, setIsSearching] = useState(false);
   const [geoError, setGeoError] = useState<string | null>(null);
   const [mapZoom, setMapZoom] = useState(13);
+  const [currentUser, setCurrentUser] = useState<string | null>(() => localStorage.getItem('currentUser'));
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authData, setAuthData] = useState({ email: '', password: '', terms: false });
   const [visitCount, setVisitCount] = useState(() => {
     const saved = localStorage.getItem('visitCount');
     return saved ? parseInt(saved, 10) : Math.floor(Math.random() * 50) + 10;
@@ -115,8 +119,7 @@ export default function App() {
         let msg = '';
         switch(err.code) {
           case err.PERMISSION_DENIED: 
-            msg = 'Location permission denied. Please enable GPS in browser settings to see your exact current position.'; 
-            alert(msg);
+            msg = 'Location access denied. Enable GPS in browser settings for map features.';
             break;
           case err.POSITION_UNAVAILABLE: msg = 'Location unavailable. Check your device GPS signal.'; break;
           case err.TIMEOUT: msg = 'Location request timed out.'; break;
@@ -207,7 +210,31 @@ export default function App() {
 
   const [showActiveStatusModal, setShowActiveStatusModal] = useState(false);
 
+  useEffect(() => {
+    localStorage.setItem('currentUser', currentUser || '');
+  }, [currentUser]);
+
+  const handleAuth = () => {
+    const users: any[] = JSON.parse(localStorage.getItem('registeredUsers') || '[]');
+    if (authMode === 'register') {
+      if (!authData.terms) return alert('Accept T&C');
+      if (users.find(u => u.email === authData.email)) return alert('User exists');
+      users.push({ email: authData.email, password: authData.password });
+      localStorage.setItem('registeredUsers', JSON.stringify(users));
+      alert('Registered! Please login.');
+      setAuthMode('login');
+    } else {
+      if (users.find(u => u.email === authData.email && u.password === authData.password)) {
+        setCurrentUser(authData.email);
+        setShowAuthModal(false);
+      } else {
+        alert('Invalid details');
+      }
+    }
+  };
+
   const handleActivationClick = () => {
+    if (!currentUser) return setShowAuthModal(true);
     if (mySubmission?.active) {
       setShowActiveStatusModal(true);
     } else {
@@ -216,7 +243,10 @@ export default function App() {
     }
   };
 
-  const handleAdminClick = () => setShowAdminView(true);
+  const handleAdminClick = () => {
+    if (!currentUser) return setShowAuthModal(true);
+    setShowAdminView(true);
+  };
 
   const resetActivation = () => {
     setShowActivationModal(false);
@@ -1020,29 +1050,10 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen bg-white relative">
-      {!showAdminView && (
-        <div className="fixed top-6 left-6 flex items-center gap-3 bg-white/80 backdrop-blur-xl p-2 rounded-2xl shadow-xl border border-white/40 z-50 ring-1 ring-black/5">
-          {mySubmission?.active && (
-            <img src={mySubmission?.profile} className="w-10 h-10 rounded-xl object-cover shadow-sm ring-2 ring-white" alt="Profile" />
-          )}
-          {mySubmission && (
-            <div className="flex flex-col pr-2">
-              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Status</span>
-              <div className="flex items-center gap-1.5">
-                <Circle className={`w-3 h-3 ${mySubmission?.active ? 'fill-green-500 text-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'fill-red-500 text-red-500'}`} />
-                <span className={`text-[10px] font-bold uppercase tracking-tighter ${mySubmission?.active ? 'text-green-600' : 'text-red-600'}`}>
-                  {mySubmission?.active ? 'Live' : 'Offline'}
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-      
       <main className={`flex-grow bg-white ${(activeTab === 'gigs' || activeTab === 'seekers') ? 'pt-0 pb-14' : 'p-4 pt-6 pb-16'}`}>
         {activeTab === 'seekers' && (
           <div className="w-full h-full relative z-0">
-            <div className="absolute top-24 left-4 right-4 z-[1000]">
+            <div className="absolute top-6 left-4 right-4 z-[1000]">
               <div className="bg-white/90 backdrop-blur-xl shadow-2xl border border-white/60 rounded-3xl flex items-center h-14 px-5 gap-3 ring-1 ring-black/5">
                 <Search className="w-6 h-6 text-blue-500" />
                 <input 
@@ -1203,21 +1214,21 @@ export default function App() {
                 </Marker>
             </MapContainer>
 
-            {/* Floating Map Controls */}
-            <div className="absolute top-6 right-4 z-[1000] flex flex-col gap-3 items-end">
+            {/* Floating Map Search Bar */}
+            <div className="absolute top-6 left-4 right-4 z-[1000]">
                <motion.div 
                  initial={false}
-                 animate={{ width: showMapSearch ? '240px' : '44px' }}
-                 className="bg-white rounded-2xl shadow-2xl border border-gray-100 flex items-center overflow-hidden h-11"
+                 animate={{ width: showMapSearch ? '100%' : '44px' }}
+                 className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/60 flex items-center overflow-hidden h-14 ring-1 ring-black/5"
                >
                   <button 
                     onClick={() => setShowMapSearch(!showMapSearch)}
-                    className="w-11 h-11 flex items-center justify-center shrink-0 hover:bg-gray-50 transition-colors"
+                    className="w-14 h-14 flex items-center justify-center shrink-0 hover:bg-gray-50 transition-colors"
                   >
-                    <Search className={`w-5 h-5 ${showMapSearch ? 'text-blue-600' : 'text-gray-500'}`} />
+                    <Search className={`w-6 h-6 ${showMapSearch ? 'text-blue-600' : 'text-gray-500'}`} />
                   </button>
                   {showMapSearch && (
-                    <div className="relative flex-grow h-full flex items-center">
+                    <div className="relative flex-grow h-full flex items-center pr-4">
                       <input 
                         autoFocus
                         type="text" 
@@ -1225,23 +1236,26 @@ export default function App() {
                         onChange={(e) => setSearchQuery(e.target.value)}
                         onKeyDown={handleSearch}
                         placeholder="Search address, street, city..." 
-                        className="w-full h-full px-2 outline-none text-sm font-medium bg-transparent"
+                        className="w-full h-full px-2 outline-none text-sm font-bold text-gray-800 bg-transparent placeholder:text-gray-400"
                         disabled={isSearching}
                       />
                       {isSearching && (
-                        <div className="absolute right-2">
-                          <LoaderCircle className="w-4 h-4 text-blue-500 animate-spin" />
+                        <div className="absolute right-4">
+                          <LoaderCircle className="w-5 h-5 text-blue-500 animate-spin" />
                         </div>
                       )}
                     </div>
                   )}
                </motion.div>
+            </div>
 
+            {/* Side Map Controls */}
+            <div className="absolute top-24 right-4 z-[1000] flex flex-col gap-3 items-end">
                <button 
                  onClick={() => setMapType(mapType === 'streets' ? 'satellite' : 'streets')}
-                 className="w-11 h-11 bg-white rounded-2xl shadow-2xl border border-gray-100 flex items-center justify-center hover:bg-gray-50 transition-colors"
+                 className="w-12 h-12 bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/60 flex items-center justify-center hover:bg-gray-50 transition-colors ring-1 ring-black/5"
                >
-                  <Layers className={`w-5 h-5 ${mapType === 'satellite' ? 'text-blue-600' : 'text-gray-500'}`} />
+                  <Layers className={`w-6 h-6 ${mapType === 'satellite' ? 'text-blue-600' : 'text-gray-500'}`} />
                </button>
 
                <button 
@@ -1268,9 +1282,9 @@ export default function App() {
                      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
                    );
                  }}
-                 className="w-11 h-11 bg-white rounded-2xl shadow-2xl border border-gray-100 flex items-center justify-center hover:bg-gray-50 transition-colors"
+                 className="w-12 h-12 bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/60 flex items-center justify-center hover:bg-gray-50 transition-colors ring-1 ring-black/5"
                >
-                  <MapPin className={`w-5 h-5 ${userCoords ? 'text-blue-600 animate-bounce' : 'text-gray-400'}`} />
+                  <MapPin className={`w-6 h-6 ${userCoords ? 'text-blue-600 animate-bounce' : 'text-gray-400'}`} />
                </button>
             </div>
           </div>
@@ -1335,30 +1349,39 @@ export default function App() {
         <motion.button 
           whileHover={{ scale: 1.1, y: -3 }}
           whileTap={{ scale: 0.9 }}
-          onClick={() => setActiveTab('seekers')} 
-          className={`relative flex flex-col items-center justify-center w-11 h-11 rounded-xl transition-all duration-500 ${activeTab === 'seekers' ? 'bg-gradient-to-tr from-blue-600 via-blue-500 to-indigo-400 text-white shadow-[0_8px_15px_-5px_rgba(37,99,235,0.4),inset_0_1px_2px_rgba(255,255,255,0.3)] ring-1 ring-white/20' : 'text-gray-400 hover:text-gray-600'}`}
+          onClick={() => {
+            if (!currentUser) return setShowAuthModal(true);
+            setActiveTab('seekers');
+          }} 
+          className={`relative flex flex-col items-center justify-center w-11 h-11 rounded-xl transition-all duration-500 ${(activeTab as string) === 'seekers' ? 'bg-gradient-to-tr from-blue-600 via-blue-500 to-indigo-400 text-white shadow-[0_8px_15px_-5px_rgba(37,99,235,0.4),inset_0_1px_2px_rgba(255,255,255,0.3)] ring-1 ring-white/20' : 'text-gray-400 hover:text-gray-600'}`}
         >
-          {activeTab === 'seekers' && <motion.div layoutId="nav-bg" className="absolute inset-0 bg-blue-600 rounded-xl -z-10 blur-sm opacity-50" />}
-          <Users className={`w-5 h-5 ${activeTab === 'seekers' ? 'drop-shadow-[0_1px_1px_rgba(0,0,0,0.2)]' : ''}`} />
-          <span className={`text-[8px] font-bold mt-0.5 uppercase tracking-tighter ${activeTab === 'seekers' ? 'opacity-100' : 'opacity-60'}`}>Seekers</span>
+          {(activeTab as string) === 'seekers' && <motion.div layoutId="nav-bg" className="absolute inset-0 bg-blue-600 rounded-xl -z-10 blur-sm opacity-50" />}
+          <Users className={`w-5 h-5 ${(activeTab as string) === 'seekers' ? 'drop-shadow-[0_1px_1px_rgba(0,0,0,0.2)]' : ''}`} />
+          <span className={`text-[8px] font-bold mt-0.5 uppercase tracking-tighter ${(activeTab as string) === 'seekers' ? 'opacity-100' : 'opacity-60'}`}>Seekers</span>
         </motion.button>
 
         <motion.button 
           whileHover={{ scale: 1.1, y: -3 }}
           whileTap={{ scale: 0.9 }}
-          onClick={() => setActiveTab('gigs')} 
-          className={`relative flex flex-col items-center justify-center w-11 h-11 rounded-xl transition-all duration-500 ${activeTab === 'gigs' ? 'bg-gradient-to-tr from-blue-600 via-blue-500 to-indigo-400 text-white shadow-[0_8px_15px_-5px_rgba(37,99,235,0.4),inset_0_1px_2px_rgba(255,255,255,0.3)] ring-1 ring-white/20' : 'text-gray-400 hover:text-gray-600'}`}
+          onClick={() => {
+            if (!currentUser) return setShowAuthModal(true);
+            setActiveTab('gigs');
+          }} 
+          className={`relative flex flex-col items-center justify-center w-11 h-11 rounded-xl transition-all duration-500 ${(activeTab as string) === 'gigs' ? 'bg-gradient-to-tr from-blue-600 via-blue-500 to-indigo-400 text-white shadow-[0_8px_15px_-5px_rgba(37,99,235,0.4),inset_0_1px_2px_rgba(255,255,255,0.3)] ring-1 ring-white/20' : 'text-gray-400 hover:text-gray-600'}`}
         >
-          {activeTab === 'gigs' && <motion.div layoutId="nav-bg" className="absolute inset-0 bg-blue-600 rounded-xl -z-10 blur-sm opacity-50" />}
-          <Briefcase className={`w-5 h-5 ${activeTab === 'gigs' ? 'drop-shadow-[0_1px_1px_rgba(0,0,0,0.2)]' : ''}`} />
-          <span className={`text-[8px] font-bold mt-0.5 uppercase tracking-tighter ${activeTab === 'gigs' ? 'opacity-100' : 'opacity-60'}`}>GiGs</span>
+          {(activeTab as string) === 'gigs' && <motion.div layoutId="nav-bg" className="absolute inset-0 bg-blue-600 rounded-xl -z-10 blur-sm opacity-50" />}
+          <Briefcase className={`w-5 h-5 ${(activeTab as string) === 'gigs' ? 'drop-shadow-[0_1px_1px_rgba(0,0,0,0.2)]' : ''}`} />
+          <span className={`text-[8px] font-bold mt-0.5 uppercase tracking-tighter ${(activeTab as string) === 'gigs' ? 'opacity-100' : 'opacity-60'}`}>GiGs</span>
         </motion.button>
 
         {submissions[submissions.length - 1]?.type === 'tenant' && submissions[submissions.length - 1]?.active && (
           <motion.button 
             whileHover={{ scale: 1.1, y: -3 }}
             whileTap={{ scale: 0.9 }}
-            onClick={() => setActiveTab('tenant-portal')} 
+            onClick={() => {
+              if (!currentUser) return setShowAuthModal(true);
+              setActiveTab('tenant-portal');
+            }} 
             className={`relative flex flex-col items-center justify-center w-11 h-11 rounded-xl transition-all duration-500 ${(activeTab as string) === 'tenant-portal' ? 'bg-gradient-to-tr from-blue-600 via-blue-500 to-indigo-400 text-white shadow-[0_8px_15px_-5px_rgba(37,99,235,0.4),inset_0_1px_2px_rgba(255,255,255,0.3)] ring-1 ring-white/20' : 'text-gray-400 hover:text-gray-600'}`}
           >
             {(activeTab as string) === 'tenant-portal' && <motion.div layoutId="nav-bg" className="absolute inset-0 bg-blue-600 rounded-xl -z-10 blur-sm opacity-50" />}
@@ -1371,7 +1394,10 @@ export default function App() {
           <motion.button 
             whileHover={{ scale: 1.1, y: -3 }}
             whileTap={{ scale: 0.9 }}
-            onClick={() => setActiveTab('user-portal')} 
+            onClick={() => {
+              if (!currentUser) return setShowAuthModal(true);
+              setActiveTab('user-portal');
+            }} 
             className={`relative flex flex-col items-center justify-center w-11 h-11 rounded-xl transition-all duration-500 ${(activeTab as string) === 'user-portal' ? 'bg-gradient-to-tr from-blue-600 via-blue-500 to-indigo-400 text-white shadow-[0_8px_15px_-5px_rgba(37,99,235,0.4),inset_0_1px_2px_rgba(255,255,255,0.3)] ring-1 ring-white/20' : 'text-gray-400 hover:text-gray-600'}`}
           >
             {(activeTab as string) === 'user-portal' && <motion.div layoutId="nav-bg" className="absolute inset-0 bg-blue-600 rounded-xl -z-10 blur-sm opacity-50" />}
